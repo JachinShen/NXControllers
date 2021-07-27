@@ -20,5 +20,5 @@ do
     dkms remove -m hid-nintendo-nx -v "$instance" --all
 
     echo "Rmoving $instance folder from /usr/src"
-    rm --recursive "/usr/src/hid-nintendo-nx$instance/"
+    rm --recursive "/usr/src/hid-nintendo-nx-$instance/"
 done

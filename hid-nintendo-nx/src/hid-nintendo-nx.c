@@ -353,13 +353,13 @@ struct joycon_subcmd_request {
 	u8 packet_num; /* incremented every send */
 	u8 rumble_data[8];
 	u8 subcmd_id;
-	u8 data[0]; /* length depends on the subcommand */
+	u8 data[38]; /* length depends on the subcommand */
 } __packed;
 
 struct joycon_subcmd_reply {
 	u8 ack; /* MSB 1 for ACK, 0 for NACK */
 	u8 id; /* id of requested subcmd */
-	u8 data[0]; /* will be at most 35 bytes */
+	u8 data[8]; /* will be at most 35 bytes */
 } __packed;
 
 struct joycon_imu_data {
@@ -504,6 +504,16 @@ static int joycon_hid_send_sync(struct joycon_ctlr *ctlr, u8 *data, size_t len,
 	int ret;
 	int tries = 2;
 
+	// u8 hex_table[16] = {
+	// 	'0', '1', '2', '3', '4', '5', '6', '7',
+	// 	'8', '9', 'A', 'B', 'C', 'D', 'E', 'F' };
+	// u8 str_data[100] = { 0 };
+	// int i;
+	// for(i=0; i < len && i < 50; i++) {
+	// 	str_data[2*i] = hex_table[data[i] / 16];
+	// 	str_data[2*i+1] = hex_table[data[i] % 16];
+	// }
+	// hid_info(ctlr->hdev, "send: %s", str_data);
 	/*
 	 * The controller occasionally seems to drop subcommands. In testing,
 	 * doing one retry after a timeout appears to always work.
@@ -932,6 +942,106 @@ static int joycon_enable_imu(struct joycon_ctlr *ctlr, bool enable)
 	return joycon_send_subcmd(ctlr, req, 1, HZ);
 }
 
+static void dbg_receive(struct joycon_ctlr *ctlr) {
+	// hid_info(ctlr->hdev, "ringcon reply:  %02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",
+	// r[0], r[1], r[2], r[3], r[4],
+	// r[5], r[6], r[7], r[8], r[9],
+	// r[10], r[11], r[12], r[13], r[14]);
+	struct joycon_input_report *report;
+	u8 *r;
+	report = (struct joycon_input_report *)ctlr->input_buf;
+	r = report->subcmd_reply.data;
+	hid_info(ctlr->hdev,
+	"rr: id:%02x, ack:%02x, subid:%02x, data:%02x%02x%02x%02x%02x%02x%02x%02x",
+	report->id, report->subcmd_reply.ack, report->subcmd_reply.id,
+	r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7]);
+}
+
+static int joycon_enable_ringcon(struct joycon_ctlr *ctlr)
+{
+	struct joycon_subcmd_request *req;
+	struct joycon_input_report *report;
+	u8 buffer[sizeof(*req) + 1] = { 0 };
+	u8 *r;
+	int i;
+	u8 unknown_59[38] = {
+		0x97, 0x9e, 0x99, 0x8c, 0x8b, 0x82, 0x85, 0xa8, 0xaf, 0xa6, 0xa1, 0xb4, 0xb3, 0xba, 0xbd, 0xc7, 0xc0, 0xc9, 0xce, 0xdb, 0xdc, 0xd5, 0xd2, 0xff, 0xf8, 0xf1, 0xf6, 0xe3, 0xe4, 0xed, 0xea, 0xb7, 0xb0, 0xb9, 0xbe, 0xab, 0xac, 0xa5 
+	};
+	u8 unknown_5c[38] = {
+		0x06, 0x03, 0x25, 0x06, 0x00, 0x00, 0x00, 0x00, 0xec, 0x99, 0xac, 0xe3, 0x1c, 0x00, 0x00, 0x00, 0x69, 0x9b, 0x16, 0xf6, 0x5d, 0x56, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x90, 0x28, 0xa1, 0xe3, 0x1c, 0x00
+	};
+
+	req = (struct joycon_subcmd_request *)buffer;
+	req->subcmd_id = JC_SUBCMD_SET_MCU_STATE;
+	req->data[0] = 0x01; // Standby
+	joycon_send_subcmd(ctlr, req, 0, HZ);
+
+	req->subcmd_id = JC_SUBCMD_SET_MCU_CONFIG;
+	// Enable ringcon
+	req->data[0] = 0x21;
+	req->data[1] = 0x00;
+	req->data[2] = 0x03;
+	req->data[37] = 0xfa;
+	// joycon_send_subcmd(ctlr, req, 1, HZ);
+
+	for(i=0; i<10; i++) {
+		joycon_send_subcmd(ctlr, req, 0, HZ);
+		report = (struct joycon_input_report *)ctlr->input_buf;
+		hid_info(ctlr->hdev, "enable ringcon reply: %x", report->subcmd_reply.data[7]);
+		if (report->subcmd_reply.data[7] == 0x03) {
+			break;
+		}
+		// r = ctlr->input_buf;
+		// hid_info(ctlr->hdev, "ringcon reply:  %02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",
+		// r[0], r[1], r[2], r[3], r[4],
+		// r[5], r[6], r[7], r[8], r[9],
+		// r[10], r[11], r[12], r[13], r[14]);
+	}
+
+	// Disable IR
+	req->data[0] = 0x21;
+	req->data[1] = 0x01;
+	req->data[2] = 0x01;
+	req->data[37] = 0xf3;
+	joycon_send_subcmd(ctlr, req, 0, HZ);
+	dbg_receive(ctlr);
+
+	// Unknown 0x59
+	req->subcmd_id = 0x59;
+	memcpy(req->data, unknown_59, 38);
+	joycon_send_subcmd(ctlr, req, 0, HZ);
+	dbg_receive(ctlr);
+
+	for (i=0; i<38; i++) {
+		req->data[i] = 0;
+	}
+	req->subcmd_id = JC_SUBCMD_ENABLE_IMU;
+	req->data[0] = 0x03;
+	joycon_send_subcmd(ctlr, req, 0, HZ);
+	dbg_receive(ctlr);
+
+	// Unknown 5c
+	req->subcmd_id = 0x5c;
+	memcpy(req->data, unknown_5c, 38);
+	joycon_send_subcmd(ctlr, req, 0, HZ);
+	dbg_receive(ctlr);
+
+	// unknown 5a
+	for (i=0; i<38; i++) {
+		req->data[i] = 0;
+	}
+	req->subcmd_id = 0x5a;
+	req->data[0] = 0x04;
+	req->data[1] = 0x01;
+	req->data[2] = 0x01;
+	req->data[3] = 0x02;
+	joycon_send_subcmd(ctlr, req, 0, HZ);
+	dbg_receive(ctlr);
+
+	return 0;
+}
+
+
 static s32 joycon_map_stick_val(struct joycon_stick_cal *cal, s32 val)
 {
 	s32 center = cal->center;
@@ -969,6 +1079,7 @@ static void joycon_input_report_parse_imu_data(struct joycon_ctlr *ctlr,
 		/* point to next imu sample */
 		raw += sizeof(struct joycon_imu_data);
 	}
+	// hid_info(ctlr->hdev, "ringcon flex: %d", imu_data[2].accel_y);
 }
 
 static void joycon_parse_imu_report(struct joycon_ctlr *ctlr,
@@ -976,6 +1087,7 @@ static void joycon_parse_imu_report(struct joycon_ctlr *ctlr,
 {
 	struct joycon_imu_data imu_data[3] = {0}; /* 3 reports per packet */
 	struct input_dev *idev = ctlr->imu_input;
+	struct input_dev *dev = ctlr->input;
 	unsigned int msecs = jiffies_to_msecs(jiffies);
 	unsigned int last_msecs = ctlr->imu_last_pkt_ms;
 	int i;
@@ -1080,7 +1192,7 @@ static void joycon_parse_imu_report(struct joycon_ctlr *ctlr,
 	ctlr->imu_last_pkt_ms = msecs;
 
 	/* Each IMU input report contains three samples */
-	for (i = 0; i < 3; i++) {
+	for (i = 0; i < 2; i++) {
 		input_event(idev, EV_MSC, MSC_TIMESTAMP,
 			    ctlr->imu_timestamp_us);
 
@@ -1159,6 +1271,7 @@ static void joycon_parse_imu_report(struct joycon_ctlr *ctlr,
 		input_report_abs(idev, ABS_RX, value[0]);
 		input_report_abs(idev, ABS_RY, value[1]);
 		input_report_abs(idev, ABS_RZ, value[2]);
+		input_report_abs(dev, ABS_X, value[3]);
 		input_report_abs(idev, ABS_X, value[3]);
 		input_report_abs(idev, ABS_Y, value[4]);
 		input_report_abs(idev, ABS_Z, value[5]);
@@ -1166,6 +1279,8 @@ static void joycon_parse_imu_report(struct joycon_ctlr *ctlr,
 		/* convert to micros and divide by 3 (3 samples per report). */
 		ctlr->imu_timestamp_us += ctlr->imu_avg_delta_ms * 1000 / 3;
 	}
+	// input_report_abs(idev, ABS_Y, (imu_data[2].accel_y - 4600) * 10);
+	input_report_abs(dev, ABS_Y, (imu_data[2].accel_y - 4600) * 10);
 }
 
 static void joycon_parse_report(struct joycon_ctlr *ctlr,
@@ -1585,6 +1700,14 @@ static int joycon_input_create(struct joycon_ctlr *ctlr)
 		input_set_abs_params(ctlr->input, ABS_RY,
 				     -JC_MAX_STICK_MAG, JC_MAX_STICK_MAG,
 				     JC_STICK_FUZZ, JC_STICK_FLAT);
+		input_set_abs_params(ctlr->input, ABS_X,
+					-JC_IMU_MAX_ACCEL_MAG, JC_IMU_MAX_ACCEL_MAG,
+					JC_IMU_ACCEL_FUZZ, JC_IMU_ACCEL_FLAT);
+		input_abs_set_res(ctlr->input, ABS_X, JC_IMU_ACCEL_RES_PER_G);
+		input_set_abs_params(ctlr->input, ABS_Y,
+					-JC_IMU_MAX_ACCEL_MAG, JC_IMU_MAX_ACCEL_MAG,
+					JC_IMU_ACCEL_FUZZ, JC_IMU_ACCEL_FLAT);
+		input_abs_set_res(ctlr->input, ABS_Y, JC_IMU_ACCEL_RES_PER_G);
 
 		for (i = 0; joycon_button_inputs_r[i] > 0; i++)
 			input_set_capability(ctlr->input, EV_KEY,
@@ -2143,6 +2266,12 @@ static int nintendo_hid_probe(struct hid_device *hdev,
 	if (ret) {
 		hid_err(hdev, "Failed to enable the IMU; ret=%d\n", ret);
 		goto err_mutex;
+	}
+
+	/* Enable ringcon */
+	ret = joycon_enable_ringcon(ctlr);
+	if (ret) {
+		hid_warn(hdev, "Failed to enable ringcon; ret=%d\n", ret);
 	}
 
 	ret = joycon_read_info(ctlr);
