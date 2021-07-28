@@ -1,8 +1,5 @@
-# USB and Bluetooth Linux Driver for Nintendo Switch Pro Controller and Joycons
-This driver is based on Daniel Ogorchock's driver that is included in https://github.com/DanielOgorchock/linux. I've added proper controller enumeration similar to how it works on Nintendo Switch.
-DKMS and build scripts are based on https://github.com/atar-axis/xpadneo. This driver was tested on Ubuntu 19.10.
-
-For dual joycon support as one controller you are going to need: https://github.com/DanielOgorchock/joycond
+# Bluetooth Linux Driver for Nintendo Switch Ringcon
+This driver is based on https://github.com/mpawlowski7/NXControllers. I learn the ringcon protocol from https://github.com/Yamakaky/joy and add ringcon support.
 
 ## Build instructions
 ### Dependencies 
@@ -11,14 +8,14 @@ For dual joycon support as one controller you are going to need: https://github.
 ``sudo apt install dkms linux-headers-`uname -r` ``  
 
 ### Installation
-* `git clone https://github.com/mpawlowski7/nxcontrollers.git`
+* `git clone https://github.com/JachinShen/NXControllers`
 * `cd nxcontrollers`
 * `sudo ./install.sh`
 
 ## Usage
 * Load module `sudo modprobe hid_nintendo` (or reboot)
-* Connect controller via USB or Bluetooth,
-* Verify that driver is loaded `lsmod | grep 'hid_nintendo'`
+* Press pairing button on joycon, quickly insert it into the ringcon and connect via Bluetooth.
+* Ringcon flex value is shown in the second value of IMU field, typical /dev/input/js1
 
 ## Update
 * `git pull`
@@ -26,6 +23,3 @@ For dual joycon support as one controller you are going to need: https://github.
 
 ## Uninstallation
 * Run `sudo ./uninstall.sh` to remove all installed versions of hid-nintendo.
-
-## Using in Lutris
-To use it in Lutris copy paste path to **sdl2/gamecontrollerdb.txt** or **sdl2/gamecontrollerdb_nx.txt(for reverse Nintendo-like button order)** into **System options > Show advanced options > SDL2 gamepad mapping**
