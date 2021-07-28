@@ -970,11 +970,13 @@ static int joycon_enable_ringcon(struct joycon_ctlr *ctlr)
 	u8 unknown_5c[38] = {
 		0x06, 0x03, 0x25, 0x06, 0x00, 0x00, 0x00, 0x00, 0xec, 0x99, 0xac, 0xe3, 0x1c, 0x00, 0x00, 0x00, 0x69, 0x9b, 0x16, 0xf6, 0x5d, 0x56, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x90, 0x28, 0xa1, 0xe3, 0x1c, 0x00
 	};
+	int ret;
 
 	req = (struct joycon_subcmd_request *)buffer;
 	req->subcmd_id = JC_SUBCMD_SET_MCU_STATE;
 	req->data[0] = 0x01; // Standby
 	joycon_send_subcmd(ctlr, req, 0, HZ);
+	dbg_receive(ctlr);
 
 	req->subcmd_id = JC_SUBCMD_SET_MCU_CONFIG;
 	// Enable ringcon
@@ -987,7 +989,8 @@ static int joycon_enable_ringcon(struct joycon_ctlr *ctlr)
 	for(i=0; i<10; i++) {
 		joycon_send_subcmd(ctlr, req, 0, HZ);
 		report = (struct joycon_input_report *)ctlr->input_buf;
-		hid_info(ctlr->hdev, "enable ringcon reply: %x", report->subcmd_reply.data[7]);
+		dbg_receive(ctlr);
+		// hid_info(ctlr->hdev, "enable ringcon reply: %x", report->subcmd_reply.data[7]);
 		if (report->subcmd_reply.data[7] == 0x03) {
 			break;
 		}
@@ -1079,7 +1082,7 @@ static void joycon_input_report_parse_imu_data(struct joycon_ctlr *ctlr,
 		/* point to next imu sample */
 		raw += sizeof(struct joycon_imu_data);
 	}
-	// hid_info(ctlr->hdev, "ringcon flex: %d", imu_data[2].accel_y);
+	// hid_info(ctlr->hdev, "gyro x: %d, y: %d, z: %d", imu_data[2].gyro_x, imu_data[2].gyro_y, imu_data[2].gyro_z);
 }
 
 static void joycon_parse_imu_report(struct joycon_ctlr *ctlr,
@@ -1214,31 +1217,31 @@ static void joycon_parse_imu_report(struct joycon_ctlr *ctlr,
 		 * otherwise occur. To prevent overflow (without resorting to 64
 		 * bit integer math), the mult_frac macro is used.
 		 */
-		value[0] = mult_frac((JC_IMU_PREC_RANGE_SCALE *
-				      (imu_data[i].gyro_x -
-				       ctlr->gyro_cal.offset[0])),
-				     ctlr->gyro_cal.scale[0],
-				     ctlr->imu_cal_gyro_divisor[0]);
-		value[1] = mult_frac((JC_IMU_PREC_RANGE_SCALE *
-				      (imu_data[i].gyro_y -
-				       ctlr->gyro_cal.offset[1])),
-				     ctlr->gyro_cal.scale[1],
-				     ctlr->imu_cal_gyro_divisor[1]);
-		value[2] = mult_frac((JC_IMU_PREC_RANGE_SCALE *
-				      (imu_data[i].gyro_z -
-				       ctlr->gyro_cal.offset[2])),
-				     ctlr->gyro_cal.scale[2],
-				     ctlr->imu_cal_gyro_divisor[2]);
+		// value[0] = mult_frac((JC_IMU_PREC_RANGE_SCALE *
+		// 		      (imu_data[i].gyro_x -
+		// 		       ctlr->gyro_cal.offset[0])),
+		// 		     ctlr->gyro_cal.scale[0],
+		// 		     ctlr->imu_cal_gyro_divisor[0]);
+		// value[1] = mult_frac((JC_IMU_PREC_RANGE_SCALE *
+		// 		      (imu_data[i].gyro_y -
+		// 		       ctlr->gyro_cal.offset[1])),
+		// 		     ctlr->gyro_cal.scale[1],
+		// 		     ctlr->imu_cal_gyro_divisor[1]);
+		// value[2] = mult_frac((JC_IMU_PREC_RANGE_SCALE *
+		// 		      (imu_data[i].gyro_z -
+		// 		       ctlr->gyro_cal.offset[2])),
+		// 		     ctlr->gyro_cal.scale[2],
+		// 		     ctlr->imu_cal_gyro_divisor[2]);
 
 		value[3] = ((s32)imu_data[i].accel_x *
 			    ctlr->accel_cal.scale[0]) /
 			    ctlr->imu_cal_accel_divisor[0];
-		value[4] = ((s32)imu_data[i].accel_y *
-			    ctlr->accel_cal.scale[1]) /
-			    ctlr->imu_cal_accel_divisor[1];
-		value[5] = ((s32)imu_data[i].accel_z *
-			    ctlr->accel_cal.scale[2]) /
-			    ctlr->imu_cal_accel_divisor[2];
+		// value[4] = ((s32)imu_data[i].accel_y *
+		// 	    ctlr->accel_cal.scale[1]) /
+		// 	    ctlr->imu_cal_accel_divisor[1];
+		// value[5] = ((s32)imu_data[i].accel_z *
+		// 	    ctlr->accel_cal.scale[2]) /
+		// 	    ctlr->imu_cal_accel_divisor[2];
 
 		hid_dbg(ctlr->hdev, "raw_gyro: g_x=%hd g_y=%hd g_z=%hd\n",
 			imu_data[i].gyro_x, imu_data[i].gyro_y,
@@ -1257,36 +1260,37 @@ static void joycon_parse_imu_report(struct joycon_ctlr *ctlr,
 		 *   Z: positive is pointing up (out of the buttons/sticks)
 		 * The axes follow the right-hand rule.
 		 */
-		if (jc_type_is_joycon(ctlr) && jc_type_has_right(ctlr)) {
-			int j;
+		// if (jc_type_is_joycon(ctlr) && jc_type_has_right(ctlr)) {
+		// 	int j;
 
-			/* negate all but x axis */
-			for (j = 1; j < 6; ++j) {
-				if (j == 3)
-					continue;
-				value[j] *= -1;
-			}
-		}
+		// 	/* negate all but x axis */
+		// 	for (j = 1; j < 6; ++j) {
+		// 		if (j == 3)
+		// 			continue;
+		// 		value[j] *= -1;
+		// 	}
+		// }
 
-		input_report_abs(idev, ABS_RX, value[0]);
-		input_report_abs(idev, ABS_RY, value[1]);
-		input_report_abs(idev, ABS_RZ, value[2]);
-		input_report_abs(dev, ABS_X, value[3]);
-		input_report_abs(idev, ABS_X, value[3]);
-		input_report_abs(idev, ABS_Y, value[4]);
-		input_report_abs(idev, ABS_Z, value[5]);
+		// input_report_abs(idev, ABS_RX, value[0]);
+		// input_report_abs(idev, ABS_RY, value[1]);
+		// input_report_abs(idev, ABS_RZ, value[2]);
+		input_report_abs(idev, ABS_X, 6 * value[3]);
+		// input_report_abs(idev, ABS_Y, value[4]);
+		// input_report_abs(idev, ABS_Z, value[5]);
 		input_sync(idev);
 		/* convert to micros and divide by 3 (3 samples per report). */
 		ctlr->imu_timestamp_us += ctlr->imu_avg_delta_ms * 1000 / 3;
 	}
-	// input_report_abs(idev, ABS_Y, (imu_data[2].accel_y - 4600) * 10);
-	input_report_abs(dev, ABS_Y, (imu_data[2].accel_y - 4600) * 10);
+	input_report_abs(idev, ABS_Y, (imu_data[2].accel_y - 4600) * 15);
+	input_sync(idev);
+	ctlr->imu_timestamp_us += ctlr->imu_avg_delta_ms * 1000 / 3;
 }
 
 static void joycon_parse_report(struct joycon_ctlr *ctlr,
 				struct joycon_input_report *rep)
 {
 	struct input_dev *dev = ctlr->input;
+	struct input_dev *idev = ctlr->imu_input;
 	unsigned long flags;
 	u8 tmp;
 	u32 btns;
@@ -1421,6 +1425,18 @@ static void joycon_parse_report(struct joycon_ctlr *ctlr,
 	}
 
 	input_sync(dev);
+
+	// hid_info(ctlr->hdev, "button: %x", btns);
+	input_report_key(idev, BTN_TR, btns & JC_BTN_R);
+	input_report_key(idev, BTN_TR2, btns & JC_BTN_ZR);
+	input_report_key(idev, BTN_START, btns & JC_BTN_PLUS);
+	input_report_key(idev, BTN_THUMBR, btns & JC_BTN_RSTICK);
+	input_report_key(idev, BTN_MODE, btns & JC_BTN_HOME);
+	input_report_key(idev, BTN_WEST, btns & JC_BTN_Y);
+	input_report_key(idev, BTN_NORTH, btns & JC_BTN_X);
+	input_report_key(idev, BTN_EAST, btns & JC_BTN_A);
+	input_report_key(idev, BTN_SOUTH, btns & JC_BTN_B);
+	input_sync(idev);
 
 	/*
 	 * Immediately after receiving a report is the most reliable time to
@@ -1700,14 +1716,14 @@ static int joycon_input_create(struct joycon_ctlr *ctlr)
 		input_set_abs_params(ctlr->input, ABS_RY,
 				     -JC_MAX_STICK_MAG, JC_MAX_STICK_MAG,
 				     JC_STICK_FUZZ, JC_STICK_FLAT);
-		input_set_abs_params(ctlr->input, ABS_X,
-					-JC_IMU_MAX_ACCEL_MAG, JC_IMU_MAX_ACCEL_MAG,
-					JC_IMU_ACCEL_FUZZ, JC_IMU_ACCEL_FLAT);
-		input_abs_set_res(ctlr->input, ABS_X, JC_IMU_ACCEL_RES_PER_G);
-		input_set_abs_params(ctlr->input, ABS_Y,
-					-JC_IMU_MAX_ACCEL_MAG, JC_IMU_MAX_ACCEL_MAG,
-					JC_IMU_ACCEL_FUZZ, JC_IMU_ACCEL_FLAT);
-		input_abs_set_res(ctlr->input, ABS_Y, JC_IMU_ACCEL_RES_PER_G);
+		// input_set_abs_params(ctlr->input, ABS_X,
+		// 			-JC_IMU_MAX_ACCEL_MAG, JC_IMU_MAX_ACCEL_MAG,
+		// 			JC_IMU_ACCEL_FUZZ, JC_IMU_ACCEL_FLAT);
+		// input_abs_set_res(ctlr->input, ABS_X, JC_IMU_ACCEL_RES_PER_G);
+		// input_set_abs_params(ctlr->input, ABS_Y,
+		// 			-JC_IMU_MAX_ACCEL_MAG, JC_IMU_MAX_ACCEL_MAG,
+		// 			JC_IMU_ACCEL_FUZZ, JC_IMU_ACCEL_FLAT);
+		// input_abs_set_res(ctlr->input, ABS_Y, JC_IMU_ACCEL_RES_PER_G);
 
 		for (i = 0; joycon_button_inputs_r[i] > 0; i++)
 			input_set_capability(ctlr->input, EV_KEY,
@@ -1760,26 +1776,30 @@ static int joycon_input_create(struct joycon_ctlr *ctlr)
 	input_set_abs_params(ctlr->imu_input, ABS_Y,
 			     -JC_IMU_MAX_ACCEL_MAG, JC_IMU_MAX_ACCEL_MAG,
 			     JC_IMU_ACCEL_FUZZ, JC_IMU_ACCEL_FLAT);
-	input_set_abs_params(ctlr->imu_input, ABS_Z,
-			     -JC_IMU_MAX_ACCEL_MAG, JC_IMU_MAX_ACCEL_MAG,
-			     JC_IMU_ACCEL_FUZZ, JC_IMU_ACCEL_FLAT);
+	// input_set_abs_params(ctlr->imu_input, ABS_Z,
+	// 		     -JC_IMU_MAX_ACCEL_MAG, JC_IMU_MAX_ACCEL_MAG,
+	// 		     JC_IMU_ACCEL_FUZZ, JC_IMU_ACCEL_FLAT);
 	input_abs_set_res(ctlr->imu_input, ABS_X, JC_IMU_ACCEL_RES_PER_G);
 	input_abs_set_res(ctlr->imu_input, ABS_Y, JC_IMU_ACCEL_RES_PER_G);
-	input_abs_set_res(ctlr->imu_input, ABS_Z, JC_IMU_ACCEL_RES_PER_G);
+	// input_abs_set_res(ctlr->imu_input, ABS_Z, JC_IMU_ACCEL_RES_PER_G);
 
-	input_set_abs_params(ctlr->imu_input, ABS_RX,
-			     -JC_IMU_MAX_GYRO_MAG, JC_IMU_MAX_GYRO_MAG,
-			     JC_IMU_GYRO_FUZZ, JC_IMU_GYRO_FLAT);
-	input_set_abs_params(ctlr->imu_input, ABS_RY,
-			     -JC_IMU_MAX_GYRO_MAG, JC_IMU_MAX_GYRO_MAG,
-			     JC_IMU_GYRO_FUZZ, JC_IMU_GYRO_FLAT);
-	input_set_abs_params(ctlr->imu_input, ABS_RZ,
-			     -JC_IMU_MAX_GYRO_MAG, JC_IMU_MAX_GYRO_MAG,
-			     JC_IMU_GYRO_FUZZ, JC_IMU_GYRO_FLAT);
+	// input_set_abs_params(ctlr->imu_input, ABS_RX,
+	// 		     -JC_IMU_MAX_GYRO_MAG, JC_IMU_MAX_GYRO_MAG,
+	// 		     JC_IMU_GYRO_FUZZ, JC_IMU_GYRO_FLAT);
+	// input_set_abs_params(ctlr->imu_input, ABS_RY,
+	// 		     -JC_IMU_MAX_GYRO_MAG, JC_IMU_MAX_GYRO_MAG,
+	// 		     JC_IMU_GYRO_FUZZ, JC_IMU_GYRO_FLAT);
+	// input_set_abs_params(ctlr->imu_input, ABS_RZ,
+	// 		     -JC_IMU_MAX_GYRO_MAG, JC_IMU_MAX_GYRO_MAG,
+	// 		     JC_IMU_GYRO_FUZZ, JC_IMU_GYRO_FLAT);
 
-	input_abs_set_res(ctlr->imu_input, ABS_RX, JC_IMU_GYRO_RES_PER_DPS);
-	input_abs_set_res(ctlr->imu_input, ABS_RY, JC_IMU_GYRO_RES_PER_DPS);
-	input_abs_set_res(ctlr->imu_input, ABS_RZ, JC_IMU_GYRO_RES_PER_DPS);
+	// input_abs_set_res(ctlr->imu_input, ABS_RX, JC_IMU_GYRO_RES_PER_DPS);
+	// input_abs_set_res(ctlr->imu_input, ABS_RY, JC_IMU_GYRO_RES_PER_DPS);
+	// input_abs_set_res(ctlr->imu_input, ABS_RZ, JC_IMU_GYRO_RES_PER_DPS);
+
+	for (i = 0; joycon_button_inputs_r[i] > 0; i++)
+		input_set_capability(ctlr->imu_input, EV_KEY,
+						joycon_button_inputs_r[i]);
 
 	__set_bit(EV_MSC, ctlr->imu_input->evbit);
 	__set_bit(MSC_TIMESTAMP, ctlr->imu_input->mscbit);
@@ -1892,56 +1912,56 @@ static int joycon_leds_create(struct joycon_ctlr *ctlr)
 	mutex_unlock(&ctlr->output_mutex);
 
 	/* configure the player LEDs */
-	for (i = 0; i < JC_NUM_LEDS; i++) {
-		name = devm_kasprintf(dev, GFP_KERNEL, "%s:%s", d_name,
-				      joycon_player_led_names[i]);
-		if (!name)
-			return -ENOMEM;
+	// for (i = 0; i < JC_NUM_LEDS; i++) {
+	// 	name = devm_kasprintf(dev, GFP_KERNEL, "%s:%s", d_name,
+	// 			      joycon_player_led_names[i]);
+	// 	if (!name)
+	// 		return -ENOMEM;
 
-		led = &ctlr->leds[i];
-		led->name = name;
-		led->brightness = ((i + 1) <= input_num) ? LED_ON : LED_OFF;
-		led->max_brightness = LED_ON;
-		led->brightness_set_blocking =
-					joycon_player_led_brightness_set;
-		led->flags = LED_CORE_SUSPENDRESUME | LED_HW_PLUGGABLE;
+	// 	led = &ctlr->leds[i];
+	// 	led->name = name;
+	// 	led->brightness = ((i + 1) <= input_num) ? LED_ON : LED_OFF;
+	// 	led->max_brightness = LED_ON;
+	// 	led->brightness_set_blocking =
+	// 				joycon_player_led_brightness_set;
+	// 	led->flags = LED_CORE_SUSPENDRESUME | LED_HW_PLUGGABLE;
 
-		ret = devm_led_classdev_register(&hdev->dev, led);
-		if (ret) {
-			hid_err(hdev, "Failed registering %s LED\n", led->name);
-			return ret;
-		}
-	}
+	// 	ret = devm_led_classdev_register(&hdev->dev, led);
+	// 	if (ret) {
+	// 		hid_err(hdev, "Failed registering %s LED\n", led->name);
+	// 		return ret;
+	// 	}
+	// }
 
 	if (++input_num > 4)
 		input_num = 1;
 	mutex_unlock(&joycon_input_num_mutex);
 
 	/* configure the home LED */
-	if (jc_type_has_right(ctlr)) {
-		name = devm_kasprintf(dev, GFP_KERNEL, "%s:%s", d_name, "home");
-		if (!name)
-			return ret;
+	// if (jc_type_has_right(ctlr)) {
+	// 	name = devm_kasprintf(dev, GFP_KERNEL, "%s:%s", d_name, "home");
+	// 	if (!name)
+	// 		return ret;
 
-		led = &ctlr->home_led;
-		led->name = name;
-		led->brightness = 0;
-		led->max_brightness = 0xF;
-		led->brightness_set_blocking = joycon_home_led_brightness_set;
-		led->flags = LED_CORE_SUSPENDRESUME | LED_HW_PLUGGABLE;
-		ret = devm_led_classdev_register(&hdev->dev, led);
-		if (ret) {
-			hid_err(hdev, "Failed registering home led\n");
-			return ret;
-		}
-		/* Set the home LED to 0 as default state */
-		ret = joycon_home_led_brightness_set(led, 0);
-		if (ret) {
-			hid_err(hdev, "Failed to set home LED dflt; ret=%d\n",
-									ret);
-			return ret;
-		}
-	}
+	// 	led = &ctlr->home_led;
+	// 	led->name = name;
+	// 	led->brightness = 0;
+	// 	led->max_brightness = 0xF;
+	// 	led->brightness_set_blocking = joycon_home_led_brightness_set;
+	// 	led->flags = LED_CORE_SUSPENDRESUME | LED_HW_PLUGGABLE;
+	// 	ret = devm_led_classdev_register(&hdev->dev, led);
+	// 	if (ret) {
+	// 		hid_err(hdev, "Failed registering home led\n");
+	// 		return ret;
+	// 	}
+	// 	/* Set the home LED to 0 as default state */
+	// 	ret = joycon_home_led_brightness_set(led, 0);
+	// 	if (ret) {
+	// 		hid_err(hdev, "Failed to set home LED dflt; ret=%d\n",
+	// 								ret);
+	// 		return ret;
+	// 	}
+	// }
 
 	return 0;
 }
@@ -2074,6 +2094,17 @@ static int joycon_ctlr_read_handler(struct joycon_ctlr *ctlr, u8 *data,
 							      int size)
 {
 	int ret = 0;
+
+	// u8 hex_table[16] = {
+	// 	'0', '1', '2', '3', '4', '5', '6', '7',
+	// 	'8', '9', 'A', 'B', 'C', 'D', 'E', 'F' };
+	// u8 str_data[100] = { 0 };
+	// int i;
+	// for(i=0; i < size && i < 50; i++) {
+	// 	str_data[2*i] = hex_table[data[i] / 16];
+	// 	str_data[2*i+1] = hex_table[data[i] % 16];
+	// }
+	// hid_info(ctlr->hdev, "recv: %s", str_data);
 
 	if (data[0] == JC_INPUT_SUBCMD_REPLY || data[0] == JC_INPUT_IMU_DATA ||
 	    data[0] == JC_INPUT_MCU_DATA) {
